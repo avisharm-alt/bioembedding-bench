@@ -1,20 +1,29 @@
 # bioembedding-bench
 
-A compact benchmark for testing whether biological embeddings carry transferable signal rather than donor, batch, or site identity.
+**Benchmarking embeddings from biomedical foundation models.**
 
-The central question is: **when an encoder produces an embedding for biological or clinical data, does a simple downstream probe generalize across people and acquisition domains?**
+`bioembedding-bench` is an AI/ML evaluation suite for frozen representations produced by biomedical foundation models across MRI, EEG, omics, pathology, and multimodal clinical data.
 
-This project is built for frozen representations from MRI, EEG, omics, pathology, and other biomedical encoders.
+The main question is: **does a pretrained model learn transferable biological signal, or are its embeddings dominated by donor identity, site, scanner, batch, or other nuisance structure?**
 
-## Benchmark axes
+## AI/ML focus
 
-- **Group generalization** — donors/subjects are held out across folds
-- **Leakage gap** — compares naive row-wise splitting with donor-held-out evaluation
-- **Domain shift** — leave-one-site-out evaluation
-- **Linear probe performance** — standardized logistic regression only
-- **Calibration** — ROC AUC, balanced accuracy, and Brier score
-- **Null testing** — subject-level label permutation
-- **Synthetic stress test** — controllable biological signal, donor fingerprint, and site shift
+- **Foundation-model embedding evaluation**
+- **Linear vs nonlinear probing**
+- **Donor-held-out generalization**
+- **Naive-vs-grouped leakage-gap analysis**
+- **Leave-one-site-out domain shift**
+- **Representation-collapse diagnostics**
+- **Calibration with Brier score**
+- **Group-level permutation nulls**
+- **Synthetic stress tests with controllable donor/site confounding**
+
+## Typical workflow
+
+1. Run a pretrained biomedical model on your dataset.
+2. Export one embedding vector per sample.
+3. Provide labels plus donor/subject IDs and optional site/scanner metadata.
+4. Benchmark how much downstream signal transfers under realistic held-out conditions.
 
 ## Install
 
@@ -28,7 +37,50 @@ pip install -e ".[dev]"
 
 ## Quickstart
 
-Run the synthetic stress test:
+```python
+from bioembedding_bench.synthetic import make_biological_embeddings
+from bioembedding_bench.evaluate import benchmark_embeddings
+from bioembedding_bench.probe_suite import compare_probes
+from bioembedding_bench.diagnostics import embedding_diagnostics
+
+X, y, donors, sites = make_biological_embeddings(seed=17)
+
+report = benchmark_embeddings(
+    X, y, donors, domains=sites, seed=17
+)
+print(report.summary)
+
+probe_results = compare_probes(
+    X, y, donors, n_splits=5, seed=17
+)
+print(probe_results)
+
+print(embedding_diagnostics(X))
+```
+
+## Probe suite
+
+Two downstream models are intentionally compared:
+
+- **Linear probe:** asks whether target information is directly accessible in embedding space.
+- **MLP probe:** asks whether useful signal is present but organized nonlinearly.
+
+A large MLP-over-linear gain can indicate nonlinear structure. A large naive-over-donor-held-out gain can indicate donor-specific leakage. A large held-out-site drop can indicate domain dependence.
+
+## Representation diagnostics
+
+The benchmark reports:
+
+- Effective rank
+- Mean embedding norm
+- Norm dispersion
+- Cosine anisotropy
+
+These are useful for detecting low-rank collapse or highly anisotropic representations before downstream model fitting.
+
+## CLI
+
+Synthetic benchmark:
 
 ```bash
 bioembedding-bench demo \
@@ -40,7 +92,7 @@ bioembedding-bench demo \
   --out results/demo
 ```
 
-Benchmark your own embeddings:
+Evaluate exported embeddings:
 
 ```bash
 bioembedding-bench evaluate embeddings.csv \
@@ -51,47 +103,20 @@ bioembedding-bench evaluate embeddings.csv \
   --out results/model
 ```
 
-## Input contract
+## Intended model classes
 
-Each row is a sample. Multiple rows may belong to one donor.
+This benchmark is suitable for embeddings from:
 
-```text
-donor_id,site,disease,emb_0,emb_1,...,emb_511
-d001,A,0,...
-d001,A,0,...
-d002,B,1,...
-```
-
-The donor and site columns are metadata only and are excluded from the probe features.
-
-## Output
-
-- `grouped_folds.csv` — donor-held-out cross-validation results
-- `domain_shift.csv` — leave-one-site-out results
-- `summary.json` — aggregate performance and leakage-gap audit
-- `null_distribution.csv` — optional subject-level permutation null
-
-## Python API
-
-```python
-from bioembedding_bench.synthetic import make_biological_embeddings
-from bioembedding_bench.evaluate import benchmark_embeddings
-
-X, y, donors, sites = make_biological_embeddings(seed=17)
-report = benchmark_embeddings(X, y, donors, sites, seed=17)
-
-print(report.summary)
-print(report.grouped_folds)
-print(report.domain_shift)
-```
+- MRI foundation models
+- EEG/self-supervised signal encoders
+- vision transformers for pathology
+- multimodal medical encoders
+- protein/omics foundation models
+- clinical representation-learning systems
 
 ## Interpretation
 
-A large **naive-minus-grouped leakage gap** suggests that row-wise validation is exploiting repeated-donor structure. A large drop on a held-out site suggests domain-specific features. Neither automatically invalidates an encoder; both identify what claim the representation can and cannot currently support.
-
-## Scope
-
-This repository evaluates representations. It does not train foundation models and does not claim clinical validity. The goal is to make downstream evaluation harder to fool.
+This repo evaluates **representations**, not clinical utility. High downstream performance does not establish clinical validity; the benchmark is intended to make representation claims more rigorous and harder to inflate through leakage or domain shortcuts.
 
 ## License
 
